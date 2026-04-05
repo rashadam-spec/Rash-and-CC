@@ -89,7 +89,7 @@ export function useAudio(): AudioControls {
   ) {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
-    const now = ctx.currentTime + startOffset;
+    const now = ctx.currentTime + startOffset + 0.01;
     o.type = type;
     o.frequency.setValueAtTime(freqStart, now);
     if (freqEnd !== freqStart) {
@@ -194,7 +194,12 @@ export function useAudio(): AudioControls {
     stopMusicInternal();
     noteIndexRef.current = 0;
     isPlayingRef.current = true;
-    scheduleNote();
+    // Delay first note 100ms — gives AudioContext.resume() time to actually
+    // start the clock. Oscillators scheduled at currentTime=0 on a suspended
+    // context miss their start time and are silently dropped on iOS.
+    musicTimerRef.current = setTimeout(() => {
+      if (isPlayingRef.current) scheduleNote();
+    }, 100);
   }, []);
 
   function stopMusicInternal() {

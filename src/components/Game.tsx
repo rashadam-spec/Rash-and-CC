@@ -66,7 +66,7 @@ export default function Game() {
 
   const { startLoop, doJump } = useGameLoop(worldRef, domRefs, handleSetPhase, audio, showBossWarning);
 
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(() => {
     const hs = worldRef.current.highScore;
     worldRef.current = makeInitialWorld(hs);
 
@@ -81,9 +81,8 @@ export default function Game() {
 
     worldRef.current.phase = 'playing';
     setPhase('playing');
-    // Await to ensure iOS AudioContext is fully unlocked before the loop starts
-    await audio.startMusic();
-    startLoop();
+    startLoop();           // start game immediately — never block on audio
+    audio.startMusic();    // fire-and-forget; handles its own async unlock internally
   }, [startLoop, audio]);
 
   const handleJump = useCallback(() => {

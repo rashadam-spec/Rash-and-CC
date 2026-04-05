@@ -23,7 +23,7 @@ export interface AudioControls {
   playEggCollect: () => void;
   playGameOver: () => void;
   playBossWarning: () => void;
-  startMusic: () => Promise<void>;
+  startMusic: () => void;
   stopMusic: () => void;
   toggleMute: () => void;
   isMuted: boolean;
@@ -190,9 +190,13 @@ export function useAudio(): AudioControls {
 
   const startMusic = useCallback(async () => {
     stopMusicInternal();
-    // Unlock AudioContext — must be called in a user gesture and awaited
-    // before scheduling any audio (required by iOS Safari)
-    await unlockCtx();
+    try {
+      // Unlock AudioContext — must be called in a user gesture and awaited
+      // before scheduling any audio (required by iOS Safari)
+      await unlockCtx();
+    } catch {
+      return; // Audio not available on this device/browser — game continues without it
+    }
     noteIndexRef.current = 0;
     isPlayingRef.current = true;
     scheduleNote();

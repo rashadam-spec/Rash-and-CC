@@ -23,7 +23,7 @@ export interface AudioControls {
   playEggCollect: () => void;
   playGameOver: () => void;
   playBossWarning: () => void;
-  startMusic: () => void;
+  startMusic: () => Promise<void>;
   stopMusic: () => void;
   toggleMute: () => void;
   isMuted: boolean;
@@ -39,8 +39,7 @@ export function useAudio(): AudioControls {
   const isMutedRef = useRef(false);
   const [isMuted, setIsMuted] = useState(false);
 
-  function getCtx(): AudioContext {
-    // Recreate if closed (happens after stopMusic → ctx.close() in cleanup)
+  function getOrCreateCtx(): AudioContext {
     if (ctxRef.current?.state === 'closed') {
       ctxRef.current = null;
     }
@@ -51,14 +50,28 @@ export function useAudio(): AudioControls {
       master.connect(ctxRef.current.destination);
       masterGainRef.current = master;
     }
-    if (ctxRef.current.state === 'suspended') {
-      ctxRef.current.resume();
-    }
     return ctxRef.current;
   }
 
+  // iOS Safari requires AudioContext.resume() to be called within a user
+  // gesture AND awaited before scheduling any audio. This also plays a silent
+  // buffer — a well-known iOS unlock pattern.
+  async function unlockCtx(): Promise<AudioContext> {
+    const ctx = getOrCreateCtx();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    // Unlock iOS by playing a zero-length silent buffer
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    return ctx;
+  }
+
   function getDest(): AudioNode {
-    return masterGainRef.current ?? getCtx().destination;
+    return masterGainRef.current ?? getOrCreateCtx().destination;
   }
 
   // ── Sound Effect Helpers ──────────────────────────────────────────────────
@@ -91,24 +104,25 @@ export function useAudio(): AudioControls {
   }
 
   // ── Sound Effects ─────────────────────────────────────────────────────────
+  // These are called after startMusic has already unlocked the ctx, so they
+  // can use the ctx synchronously.
 
   const playJump = useCallback(() => {
-    if (isMutedRef.current) return;
-    const ctx = getCtx();
-    osc(ctx, getDest(), 'sine', 300, 600, 0.28, 0.12);
+    if (isMutedRef.current || ctxRef.current?.state !== 'running') return;
+    osc(ctxRef.current, getDest(), 'sine', 300, 600, 0.28, 0.12);
   }, []);
 
   const playDoubleJump = useCallback(() => {
-    if (isMutedRef.current) return;
-    const ctx = getCtx();
+    if (isMutedRef.current || ctxRef.current?.state !== 'running') return;
+    const ctx = ctxRef.current;
     const dest = getDest();
     osc(ctx, dest, 'sine', 450, 900, 0.30, 0.15);
     osc(ctx, dest, 'sine', 600, 1200, 0.14, 0.10, 0.02);
   }, []);
 
   const playEggCollect = useCallback(() => {
-    if (isMutedRef.current) return;
-    const ctx = getCtx();
+    if (isMutedRef.current || ctxRef.current?.state !== 'running') return;
+    const ctx = ctxRef.current;
     const dest = getDest();
     [523.25, 659.25, 784.00].forEach((freq, i) => {
       osc(ctx, dest, 'triangle', freq, freq, 0.35, 0.10, i * 0.06);
@@ -116,8 +130,8 @@ export function useAudio(): AudioControls {
   }, []);
 
   const playGameOver = useCallback(() => {
-    if (isMutedRef.current) return;
-    const ctx = getCtx();
+    if (isMutedRef.current || ctxRef.current?.state !== 'running') return;
+    const ctx = ctxRef.current;
     const dest = getDest();
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
@@ -129,8 +143,8 @@ export function useAudio(): AudioControls {
   }, []);
 
   const playBossWarning = useCallback(() => {
-    if (isMutedRef.current) return;
-    const ctx = getCtx();
+    if (isMutedRef.current || ctxRef.current?.state !== 'running') return;
+    const ctx = ctxRef.current;
     const dest = getDest();
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
@@ -138,8 +152,7 @@ export function useAudio(): AudioControls {
     filter.connect(dest);
     osc(ctx, filter, 'square', 440, 440, 0.35, 0.25);
     osc(ctx, filter, 'square', 370, 330, 0.40, 0.35, 0.20);
-
-    // Low rumble via noise
+    // Low rumble
     const bufLen = Math.floor(ctx.sampleRate * 0.5);
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
     const data = buf.getChannelData(0);
@@ -161,15 +174,13 @@ export function useAudio(): AudioControls {
   // ── Background Music ──────────────────────────────────────────────────────
 
   function scheduleNote() {
-    if (!isPlayingRef.current) return;
-    const ctx = getCtx();
+    if (!isPlayingRef.current || !ctxRef.current) return;
+    const ctx = ctxRef.current;
     const dest = getDest();
     const [freq, dur] = MELODY[noteIndexRef.current];
 
-    if (!isMutedRef.current) {
-      // Main melody: triangle wave
+    if (!isMutedRef.current && ctx.state === 'running') {
       osc(ctx, dest, 'triangle', freq, freq, 0.16, (dur - 50) / 1000);
-      // Sub-octave bass warmth
       osc(ctx, dest, 'sine', freq / 2, freq / 2, 0.07, (dur - 50) / 1000);
     }
 
@@ -177,8 +188,11 @@ export function useAudio(): AudioControls {
     musicTimerRef.current = setTimeout(scheduleNote, dur - 10);
   }
 
-  const startMusic = useCallback(() => {
+  const startMusic = useCallback(async () => {
     stopMusicInternal();
+    // Unlock AudioContext — must be called in a user gesture and awaited
+    // before scheduling any audio (required by iOS Safari)
+    await unlockCtx();
     noteIndexRef.current = 0;
     isPlayingRef.current = true;
     scheduleNote();
@@ -208,7 +222,6 @@ export function useAudio(): AudioControls {
     setIsMuted(isMutedRef.current);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopMusicInternal();

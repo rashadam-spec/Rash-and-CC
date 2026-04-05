@@ -41,7 +41,9 @@ export function useAudio(): AudioControls {
   function getOrCreateCtx(): AudioContext {
     if (ctxRef.current?.state === 'closed') ctxRef.current = null;
     if (!ctxRef.current) {
-      ctxRef.current = new AudioContext();
+      // Safari on older iOS uses the webkit prefix
+      const AC = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
+      ctxRef.current = new AC();
       const master = ctxRef.current.createGain();
       master.gain.value = 1;
       master.connect(ctxRef.current.destination);
@@ -103,7 +105,7 @@ export function useAudio(): AudioControls {
   }
 
   function isReady(): boolean {
-    return !isMutedRef.current && ctxRef.current?.state === 'running';
+    return !isMutedRef.current && ctxRef.current != null;
   }
 
   // ── Sound Effects ─────────────────────────────────────────────────────────
@@ -179,7 +181,7 @@ export function useAudio(): AudioControls {
     const dest = getDest();
     const [freq, dur] = MELODY[noteIndexRef.current];
 
-    if (!isMutedRef.current && ctx.state === 'running') {
+    if (!isMutedRef.current) {
       osc(ctx, dest, 'triangle', freq, freq, 0.16, (dur - 50) / 1000);
       osc(ctx, dest, 'sine', freq / 2, freq / 2, 0.07, (dur - 50) / 1000);
     }

@@ -108,8 +108,8 @@ export default function Game() {
   return (
     <div
       className="game-wrapper"
-      onClick={handleJump}
-      onTouchStart={(e) => { e.preventDefault(); handleJump(); }}
+      onClick={() => { audio.unlock(); handleJump(); }}
+      onTouchStart={(e) => { e.preventDefault(); audio.unlock(); handleJump(); }}
     >
       <div className="game-container" style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}>
         <Background />

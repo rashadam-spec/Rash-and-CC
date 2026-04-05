@@ -3,6 +3,7 @@ import {
   GAME_WIDTH,
   SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX,
   EGG_COLORS,
+  BOSS_MIN_SCORE, BOSS_SPAWN_CHANCE,
 } from './constants';
 
 export function shouldSpawn(world: GameWorld): boolean {
@@ -18,12 +19,18 @@ export function nextSpawnDistance(currentDistance: number, speed: number): numbe
 const OBSTACLE_TYPES: Array<ObstacleEntity['type']> = ['basket', 'basket', 'basket', 'basket', 'chick', 'chick', 'chick', 'fence', 'fence'];
 
 export function spawnObstacle(world: GameWorld): ObstacleEntity {
-  const type = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+  let type: ObstacleEntity['type'];
+  if (world.score >= BOSS_MIN_SCORE && Math.random() < BOSS_SPAWN_CHANCE) {
+    type = 'boss';
+  } else {
+    type = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+  }
   return {
     id: world.entityIdCounter,
     x: GAME_WIDTH + 60,
     y: 0,
     type,
+    warnTriggered: false,
   };
 }
 

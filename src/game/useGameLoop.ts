@@ -2,11 +2,12 @@ import { useEffect, useRef, useCallback } from 'react';
 import type { GameWorld, GamePhase } from './types';
 import {
   MAX_SPEED, SPEED_RAMP_INTERVAL, SPEED_RAMP_FACTOR,
-  SCORE_PER_MS, EGG_BONUS, GROUND_Y, JUMP_VELOCITY,
+  SCORE_PER_MS, EGG_BONUS, GROUND_Y, JUMP_VELOCITY, MAX_JUMPS, BOSS_WARN_X,
 } from './constants';
 import { updateBunnyPosition } from './physics';
 import { overlaps, getBunnyBox, getObstacleBox, getEggBox } from './collision';
 import { shouldSpawn, spawnObstacle, spawnCollectible, nextSpawnDistance } from './spawner';
+import type { AudioControls } from './useAudio';
 
 export interface DomRefs {
   bunnyEl: React.RefObject<HTMLDivElement | null>;
@@ -52,19 +53,32 @@ function showScorePopup(container: HTMLDivElement, x: number, y: number, text: s
 export function useGameLoop(
   worldRef: React.MutableRefObject<GameWorld>,
   domRefs: DomRefs,
-  setPhase: (phase: GamePhase) => void
+  setPhase: (phase: GamePhase) => void,
+  audio: AudioControls,
+  showBossWarning: () => void,
 ) {
   const rafHandle = useRef<number>(0);
   const lastTimestamp = useRef<number>(0);
   const isRunning = useRef(false);
 
+  // Keep stable refs to callbacks so the tick closure never goes stale
+  const audioRef = useRef(audio);
+  audioRef.current = audio;
+  const showBossWarningRef = useRef(showBossWarning);
+  showBossWarningRef.current = showBossWarning;
+
   const doJump = useCallback(() => {
     const world = worldRef.current;
     if (world.phase !== 'playing') return;
     if (world.jumpsRemaining > 0) {
+      const isDoubleJump = world.jumpsRemaining < MAX_JUMPS;
       world.bunnyVY = JUMP_VELOCITY;
       world.jumpsRemaining -= 1;
-
+      if (isDoubleJump) {
+        audioRef.current.playDoubleJump();
+      } else {
+        audioRef.current.playJump();
+      }
       if (domRefs.bunnyEl.current) {
         domRefs.bunnyEl.current.classList.add('bunny--jumping');
       }
@@ -88,7 +102,7 @@ export function useGameLoop(
       if (!isRunning.current) return;
 
       const rawDelta = timestamp - lastTimestamp.current;
-      const deltaTime = Math.min(rawDelta, 100); // cap at 100ms to prevent spiral
+      const deltaTime = Math.min(rawDelta, 100);
       lastTimestamp.current = timestamp;
 
       const world = worldRef.current;
@@ -123,11 +137,16 @@ export function useGameLoop(
         domRefs.bunnyEl.current.style.bottom = `${GROUND_Y + world.bunnyY}px`;
       }
 
-      // Move obstacles
+      // Move obstacles + boss warning check
       for (const obs of world.obstacles) {
         obs.x -= world.speed * deltaTime;
         if (obs.el) {
           obs.el.style.transform = `translateX(${obs.x}px)`;
+        }
+        if (obs.type === 'boss' && !obs.warnTriggered && obs.x < BOSS_WARN_X) {
+          obs.warnTriggered = true;
+          audioRef.current.playBossWarning();
+          showBossWarningRef.current();
         }
       }
 
@@ -184,7 +203,8 @@ export function useGameLoop(
       const bunnyBox = getBunnyBox(world.bunnyY);
       for (const obs of world.obstacles) {
         if (overlaps(bunnyBox, getObstacleBox(obs))) {
-          // Game over
+          audioRef.current.playGameOver();
+          audioRef.current.stopMusic();
           const hs = Math.max(world.score, world.highScore);
           world.highScore = hs;
           localStorage.setItem('bunnyJumpHighScore', String(Math.floor(hs)));
@@ -200,6 +220,7 @@ export function useGameLoop(
         if (!egg.collected && overlaps(bunnyBox, getEggBox(egg))) {
           egg.collected = true;
           world.score += EGG_BONUS;
+          audioRef.current.playEggCollect();
           if (egg.el) {
             egg.el.classList.add('collected');
             const cx = egg.x + 16;

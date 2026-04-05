@@ -1,8 +1,8 @@
 import type { Box, ObstacleEntity, CollectibleEntity } from './types';
 import {
   BUNNY_X, GROUND_Y,
-  BUNNY_HITBOX, BASKET_HITBOX, CHICK_HITBOX, FENCE_HITBOX, EGG_HITBOX,
-  BUNNY_H, BASKET_H, CHICK_H, FENCE_H, EGG_H,
+  BUNNY_HITBOX, BASKET_HITBOX, CHICK_HITBOX, FENCE_HITBOX, EGG_HITBOX, BOSS_HITBOX,
+  BUNNY_H, BASKET_H, CHICK_H, FENCE_H, EGG_H, BOSS_H,
 } from './constants';
 
 export function overlaps(a: Box, b: Box): boolean {
@@ -32,6 +32,7 @@ export function getObstacleBox(obs: ObstacleEntity): Box {
   let h = BASKET_H;
   if (obs.type === 'chick') { hitbox = CHICK_HITBOX; h = CHICK_H; }
   if (obs.type === 'fence') { hitbox = FENCE_HITBOX; h = FENCE_H; }
+  if (obs.type === 'boss')  { hitbox = BOSS_HITBOX;  h = BOSS_H;  }
 
   const topFromBottom = GROUND_Y;
   const topFromTop = GAME_HEIGHT - topFromBottom - h;

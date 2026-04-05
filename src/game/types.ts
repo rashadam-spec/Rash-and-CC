@@ -1,11 +1,12 @@
 export type GamePhase = 'idle' | 'playing' | 'gameover';
-export type ObstacleType = 'basket' | 'chick' | 'fence';
+export type ObstacleType = 'basket' | 'chick' | 'fence' | 'boss';
 
 export interface ObstacleEntity {
   id: number;
   x: number;
   y: number;
   type: ObstacleType;
+  warnTriggered?: boolean;
   el?: HTMLElement;
 }
 

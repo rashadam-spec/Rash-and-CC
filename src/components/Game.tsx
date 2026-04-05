@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import type { GameWorld, GamePhase } from '../game/types';
 import { BASE_SPEED, GROUND_Y, MAX_JUMPS, GAME_WIDTH, GAME_HEIGHT } from '../game/constants';
 import { useGameLoop } from '../game/useGameLoop';
+import { useAudio } from '../game/useAudio';
 import Bunny from './Bunny';
 import Background from './Background';
 import StartScreen from './StartScreen';
@@ -29,9 +30,14 @@ function makeInitialWorld(highScore: number): GameWorld {
 export default function Game() {
   const savedHighScore = parseFloat(localStorage.getItem('bunnyJumpHighScore') ?? '0') || 0;
 
+  const audio = useAudio();
+
   const [phase, setPhase] = useState<GamePhase>('idle');
   const [displayScore, setDisplayScore] = useState(0);
   const [displayHighScore, setDisplayHighScore] = useState(savedHighScore);
+  const [showBossWarn, setShowBossWarn] = useState(false);
+  const [bossWarnKey, setBossWarnKey] = useState(0);
+  const bossWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const worldRef = useRef<GameWorld>(makeInitialWorld(savedHighScore));
 
@@ -46,22 +52,27 @@ export default function Game() {
     if (p === 'gameover') {
       setDisplayScore(Math.floor(worldRef.current.score));
       setDisplayHighScore(Math.floor(worldRef.current.highScore));
+      // audio.stopMusic() and playGameOver() are called inside the game loop
     }
     setPhase(p);
   }, []);
 
-  const { startLoop, doJump } = useGameLoop(worldRef, domRefs, handleSetPhase);
+  const showBossWarning = useCallback(() => {
+    setBossWarnKey(k => k + 1);
+    setShowBossWarn(true);
+    if (bossWarnTimerRef.current) clearTimeout(bossWarnTimerRef.current);
+    bossWarnTimerRef.current = setTimeout(() => setShowBossWarn(false), 1100);
+  }, []);
+
+  const { startLoop, doJump } = useGameLoop(worldRef, domRefs, handleSetPhase, audio, showBossWarning);
 
   const handleStart = useCallback(() => {
-    // Reset world
     const hs = worldRef.current.highScore;
     worldRef.current = makeInitialWorld(hs);
 
-    // Clear obstacle/collectible DOM
     if (obstacleContainer.current) obstacleContainer.current.innerHTML = '';
     if (collectibleContainer.current) collectibleContainer.current.innerHTML = '';
 
-    // Reset bunny position
     if (bunnyEl.current) {
       bunnyEl.current.style.bottom = `${GROUND_Y}px`;
       bunnyEl.current.classList.remove('bunny--jumping');
@@ -70,8 +81,9 @@ export default function Game() {
 
     worldRef.current.phase = 'playing';
     setPhase('playing');
+    audio.startMusic();  // AudioContext created/resumed here on first gesture
     startLoop();
-  }, [startLoop]);
+  }, [startLoop, audio]);
 
   const handleJump = useCallback(() => {
     if (phase === 'idle' || phase === 'gameover') {
@@ -114,11 +126,23 @@ export default function Game() {
         {/* Bunny */}
         <Bunny ref={bunnyEl} />
 
-        {/* Score HUD */}
+        {/* Score HUD + mute button */}
         {phase === 'playing' && (
           <div className="score-hud">
             🥚 <span ref={scoreEl}>0</span>
+            <button
+              className="btn-mute"
+              onClick={(e) => { e.stopPropagation(); audio.toggleMute(); }}
+              title={audio.isMuted ? 'Unmute' : 'Mute'}
+            >
+              {audio.isMuted ? '🔇' : '🔊'}
+            </button>
           </div>
+        )}
+
+        {/* Boss warning banner */}
+        {showBossWarn && (
+          <div key={bossWarnKey} className="boss-warning">⚠️ BOSS!</div>
         )}
 
         {/* Overlays */}
